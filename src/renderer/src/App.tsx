@@ -27,6 +27,10 @@ import ToolGroup from './components/ToolGroup.js'
 import Loading from './screens/Loading.js'
 import Onboarding from './screens/Onboarding.js'
 import ProjectPicker from './screens/ProjectPicker.js'
+import CreateProjectDialog from './components/CreateProjectDialog.js'
+import AttachmentCards from './components/AttachmentCards.js'
+import { useComposer } from './lib/composer.js'
+import { LONG_PASTE_THRESHOLD } from '../../shared/attachments.js'
 import {
   EFFORT_LEVELS,
   type AccountInfo,
@@ -38,7 +42,6 @@ import {
   type BackgroundTask,
   type ClaudeEntry,
   type ElicitationCard as ElicitationCardData,
-  type ImageAttachment,
   type PlanCard as PlanCardData,
   type EffortLevel,
   type ModelOption,
@@ -165,6 +168,7 @@ const TranscriptList = memo(function TranscriptList({
             ts={item.ts}
             id={item.id}
             images={item.kind === 'user' ? item.images : undefined}
+            attachments={item.kind === 'user' ? item.attachments : undefined}
             onFork={onFork}
           />
         ),
@@ -204,6 +208,8 @@ export default function App(): React.JSX.Element {
   const [permissions, setPermissions] = useState<PendingPermission[]>([])
   const [elicitations, setElicitations] = useState<ElicitationCardData[]>([])
   const [unknownDialog, setUnknownDialog] = useState<string | null>(null)
+  const [compatibilityNotice, setCompatibilityNotice] = useState<string | null>(null)
+  const compatibilityTimer = useRef<number | null>(null)
   const [asks, setAsks] = useState<AskCardData[]>([])
   const [plans, setPlans] = useState<PlanCardData[]>([])
   const [menu, setMenu] = useState<{
@@ -216,9 +222,10 @@ export default function App(): React.JSX.Element {
     trigger: HTMLButtonElement
   } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [draft, setDraft] = useState('')
-  /** 粘贴进输入框、还没发出去的图片 */
-  const [images, setImages] = useState<ImageAttachment[]>([])
+  const composer = useComposer()
+  const { draft, setDraft, files: attachmentFiles, processing: attachmentProcessing } = composer
+  const sending = useRef(false)
+  const [draggingFiles, setDraggingFiles] = useState(false)
   /** 撞到额度上限时的说明行,点掉或本轮结束自动消失 */
   const [limitNotice, setLimitNotice] = useState<string | null>(null)
   const [commands, setCommands] = useState<SlashCommandItem[]>([])
@@ -233,6 +240,8 @@ export default function App(): React.JSX.Element {
   /** 中栏在浏览哪个项目的文件树 */
   const [filesProject, setFilesProject] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [createProjectOpen, setCreateProjectOpen] = useState(false)
+  const createProjectTrigger = useRef<HTMLElement | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
   /** 侧栏收起时,shell 的栅格去掉那一列 */
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -364,6 +373,14 @@ export default function App(): React.JSX.Element {
   }, [reload])
 
   useEffect(() => {
+    setCompatibilityNotice(null)
+    return () => {
+      if (compatibilityTimer.current !== null) window.clearTimeout(compatibilityTimer.current)
+      compatibilityTimer.current = null
+    }
+  }, [])
+
+  useEffect(() => {
     const handleEvent = (event: ChatEvent, at: number, replaying = false): void => {
       /** 把攒着的思考定格落进对话流 —— 正文开口、工具插入、轮次收尾都要 */
       const flushThinking = (): void => {
@@ -386,6 +403,8 @@ export default function App(): React.JSX.Element {
         }
       }
       if (event.type === 'session') {
+        // 使用草稿自身的项目,事件订阅不捕获可能过期的 config。
+        composer.renameDraft('', event.sessionId)
         setActiveSession(event.sessionId)
         activeSessionRef.current = event.sessionId
         // 一发出去侧栏就该多出这条,而不是等这一轮答完。session_id 在本轮
@@ -396,6 +415,7 @@ export default function App(): React.JSX.Element {
         const item = stamp({
           kind: 'user', text: event.text, ts: at,
           ...(event.images > 0 ? { images: event.images } : {}),
+          ...(event.attachments?.length ? { attachments: event.attachments } : {}),
         })
         setTranscript((tr) => [...tr, item])
         setError(null)
@@ -455,6 +475,16 @@ export default function App(): React.JSX.Element {
         setOutputTokens(event.outputTokens)
       } else if (event.type === 'unknownDialog') {
         setUnknownDialog(event.notice.dialogKind)
+      } else if (event.type === 'compatibility') {
+        // 只提示当下的降级,切回时不重放旧提示;重复事件从最后一次计时。
+        if (!replaying) {
+          if (compatibilityTimer.current !== null) window.clearTimeout(compatibilityTimer.current)
+          setCompatibilityNotice(event.message)
+          compatibilityTimer.current = window.setTimeout(() => {
+            compatibilityTimer.current = null
+            setCompatibilityNotice(null)
+          }, 5000)
+        }
       } else if (event.type === 'permission') {
         setPermissions((q) =>
           q.some((p) => p.requestId === event.requestId)
@@ -513,6 +543,7 @@ export default function App(): React.JSX.Element {
       }
       if (message.viewId !== viewIdRef.current) return
       if (message.type === 'restore') {
+        if (message.sessionId) composer.renameDraft(message.workspace, message.sessionId)
         resetTurnState()
         setTranscript(message.history.map(stamp))
         setActiveSession(message.sessionId)
@@ -653,6 +684,9 @@ export default function App(): React.JSX.Element {
     setPlans([])
     setElicitations([])
     setUnknownDialog(null)
+    if (compatibilityTimer.current !== null) window.clearTimeout(compatibilityTimer.current)
+    compatibilityTimer.current = null
+    setCompatibilityNotice(null)
   }
 
   /** 每次选择先更换视图标识,旧事件和旧异步结果立即失效。 */
@@ -660,6 +694,8 @@ export default function App(): React.JSX.Element {
   async function selectSession(projectPath?: string, sessionId?: string): Promise<void> {
     const gen = ++openGen.current
     const viewId = crypto.randomUUID()
+    composer.switchDraft(projectPath ?? config?.activeWorkspace ?? '', sessionId ?? `new:${viewId}`)
+    setDraggingFiles(false)
     viewIdRef.current = viewId
     switchingRef.current = true
     setSwitching(true)
@@ -730,6 +766,7 @@ export default function App(): React.JSX.Element {
         setActiveSession(null)
         activeSessionRef.current = null
         setPendingSession(null)
+        setCreateProjectOpen(false)
         setPhase('projects')
       }
     }
@@ -742,13 +779,13 @@ export default function App(): React.JSX.Element {
   }
 
   async function send(): Promise<void> {
-    if (switchingRef.current) return
+    if (switchingRef.current || sending.current || attachmentProcessing || attachmentFiles.some((f) => f.status !== 'ready')) return
     const text = draft.trim()
-    if (!text && images.length === 0) return
+    if (!text && attachmentFiles.length === 0) return
 
     // 这几条是界面自己的命令,不是给 agent 的(带图时当普通消息发)。
     // 终端里 /model 由 CLI 的界面层处理,发给 agent 只会石沉大海。
-    if (images.length === 0) {
+    if (attachmentFiles.length === 0) {
       const ui = UI_COMMANDS[text.toLowerCase()]
       if (ui) {
         setDraft('')
@@ -764,9 +801,11 @@ export default function App(): React.JSX.Element {
       }
     }
 
-    setDraft('')
-    const sendImages = images
-    setImages([])
+    sending.current = true
+    const sendFiles = attachmentFiles
+    const originalDraft = draft
+    const recoverDraft = composer.recovery(originalDraft, sendFiles)
+    composer.clear()
 
     /*
      * 侧栏那一条要**现在**就出现,不是等这一轮答完。
@@ -782,16 +821,18 @@ export default function App(): React.JSX.Element {
     const ws = config?.activeWorkspace
     if (ws) {
       const known = (sessionsByProject[ws] ?? []).some((s) => s.sessionId === activeSessionRef.current)
-      if (!known) setPendingSession({ path: ws, title: text || '(图片)' })
+      if (!known) setPendingSession({ path: ws, title: text || sendFiles[0]?.name || '(附件)' })
     }
     const viewId = viewIdRef.current
     try {
-      await window.api.chat.send(text, sendImages, viewId)
+      const sent = await window.api.chat.send(text, [], viewId, sendFiles.map((f) => f.attachment!.id))
+      if (!sent) throw new Error('会话已切换,消息未发送。')
     } catch (err) {
+      recoverDraft()
       if (viewId !== viewIdRef.current) return
       setError(`发送失败:${err instanceof Error ? err.message : String(err)}`)
-      setDraft(text)
-      setImages(sendImages)
+    } finally {
+      sending.current = false
     }
   }
 
@@ -824,6 +865,33 @@ export default function App(): React.JSX.Element {
     </div>
   )
 
+  function openCreateProject(): void {
+    createProjectTrigger.current = document.activeElement as HTMLElement | null
+    setCreateProjectOpen(true)
+  }
+
+  const createProjectDialog = createProjectOpen && (
+    <CreateProjectDialog
+      returnFocus={createProjectTrigger.current}
+      onClose={() => setCreateProjectOpen(false)}
+      onCreated={async (cfg) => {
+        setConfig(cfg)
+        setCreateProjectOpen(false)
+        if (phase === 'projects') {
+          setPhase('workspace')
+          return
+        }
+        // 登记已经成功,后续会话初始化失败不能重复提交创建。
+        try {
+          if (cfg.activeWorkspace) await newSession(cfg.activeWorkspace)
+          await refreshSessions()
+        } catch (err) {
+          setError(`项目已创建,会话初始化失败:${err instanceof Error ? err.message : String(err)}`)
+        }
+      }}
+    />
+  )
+
   if (phase === 'loading') return bare(<Loading />)
 
   if (phase === 'onboarding') {
@@ -832,19 +900,20 @@ export default function App(): React.JSX.Element {
 
   if (phase === 'projects') {
     return bare(
-      <ProjectPicker
-        config={config}
-        onAdd={async () => {
-          const cfg = await window.api.projects.add()
-          setConfig(cfg)
-          if (cfg.activeWorkspace) setPhase('workspace')
-        }}
-        onUse={async (path) => {
-          setConfig(await window.api.projects.activate(path))
-          setPhase('workspace')
-        }}
-        onRemove={async (path) => setConfig(await window.api.projects.remove(path))}
-      />,
+      <>
+        {createProjectDialog}
+        <div className="project-picker-host" inert={createProjectOpen}>
+          <ProjectPicker
+            config={config}
+            onAdd={openCreateProject}
+            onUse={async (path) => {
+              setConfig(await window.api.projects.activate(path))
+              setPhase('workspace')
+            }}
+            onRemove={async (path) => setConfig(await window.api.projects.remove(path))}
+          />
+        </div>
+      </>,
     )
   }
 
@@ -971,7 +1040,9 @@ export default function App(): React.JSX.Element {
         />
       )}
 
-      <div className={`shell${midOpen ? ' with-mid' : ''}${sidebarOpen ? '' : ' no-sidebar'}`}>
+      {createProjectDialog}
+
+      <div className={`shell${midOpen ? ' with-mid' : ''}${sidebarOpen ? '' : ' no-sidebar'}`} inert={createProjectOpen}>
         {sidebarOpen && (
       <Sidebar
         projects={config?.projects ?? []}
@@ -997,13 +1068,8 @@ export default function App(): React.JSX.Element {
           setConfig(await window.api.projects.collapse(path, collapsed))
         }}
         onExpandAll={(path) => setExpandedAll((e) => ({ ...e, [path]: !e[path] }))}
-        onAddProject={async () => {
-          const cfg = await window.api.projects.add()
-          setConfig(cfg)
-          await refreshSessions()
-        }}
-        onManageProjects={() => setPhase('projects')}
-        filesProject={filesProject}
+        onAddProject={openCreateProject}
+        filesProject={openFile?.project ?? filesProject}
         onOpenFiles={(path) => {
           // 再点一次收起。切到另一个项目时,已经打开的文件要跟着让位 ——
           // 否则会出现「树是 A 项目的、右边开着 B 项目的文件」
@@ -1044,7 +1110,7 @@ export default function App(): React.JSX.Element {
           <span className="title">
             {activeSessions.find((s) => s.sessionId === activeSession)?.title ?? '新会话'}
           </span>
-          {/* 文件入口在这儿也放一个:侧栏那个挂在项目下,这个对的是「当前这个会话
+          {/* 文件入口在这儿也放一个:侧栏那个在各项目行右侧,这个对的是「当前这个会话
               在哪个目录里干活」—— 边聊边翻文件时,手不用跑到侧栏去 */}
           {config?.activeWorkspace && (
             <button
@@ -1211,6 +1277,12 @@ export default function App(): React.JSX.Element {
           )}
 
           {/* §06 兜底:收到这个版本还不会画的 dialogKind,已回 cancelled */}
+          {compatibilityNotice && (
+            <div className="notice" role="status">
+              <span className="notice-icon" aria-hidden="true">⊙</span>
+              <span>{compatibilityNotice}</span>
+            </div>
+          )}
           {unknownDialog && (
             <div className="notice" onClick={() => setUnknownDialog(null)}>
               <span className="notice-icon">⊙</span>
@@ -1274,53 +1346,59 @@ export default function App(): React.JSX.Element {
               onPick={pickCommand}
             />
           )}
-          <div className="composer">
-            {images.length > 0 && (
-              <div className="attach-row">
-                {images.map((img, i) => (
-                  <span key={i} className="attach-chip">
-                    <img
-                      className="attach-img"
-                      src={`data:${img.mediaType};base64,${img.data}`}
-                      alt={`粘贴的图片 ${i + 1}`}
-                    />
-                    <button
-                      className="attach-x"
-                      title="移除这张图"
-                      onClick={() => setImages((list) => list.filter((_, j) => j !== i))}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
+          <div className={`composer${draggingFiles ? ' file-dragging' : ''}`}
+            onDragOver={(e) => {
+              if (!Array.from(e.dataTransfer.types).includes('Files')) return
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'copy'
+              setDraggingFiles(true)
+            }}
+            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDraggingFiles(false) }}
+            onDrop={(e) => {
+              if (!e.dataTransfer.files.length) return
+              e.preventDefault()
+              setDraggingFiles(false)
+              void composer.addFiles(Array.from(e.dataTransfer.files))
+            }}>
+            {draggingFiles && <div className="attachment-hint">松开以添加图片、文档或文本</div>}
+            <AttachmentCards key={viewIdRef.current} files={attachmentFiles} project={config?.activeWorkspace ?? ''}
+              onRemove={composer.remove} onRestore={(text) => {
+                const el = composerRef.current
+                const start = el?.selectionStart ?? draft.length
+                const end = el?.selectionEnd ?? start
+                setDraft(draft.slice(0, start) + text + draft.slice(end))
+                setTimeout(() => { el?.focus(); el?.setSelectionRange(start + text.length, start + text.length) }, 0)
+              }} />
+            {attachmentProcessing && <div className="attachment-hint" role="status">正在处理附件,完成后可发送…</div>}
+            {composer.attachmentError && <div className="attachment-file-error" role="alert">{composer.attachmentError}</div>}
             <textarea
               ref={composerRef}
               value={draft}
               placeholder={
                 busy
                   ? '正在回答…这条会排队,答完接着发(Enter 发送)'
-                  : '给 Claude Code 发消息…(Enter 发送,Shift+Enter 换行,/ 唤出命令,可粘贴图片)'
+                  : '给 Claude Code 发消息…(Enter 发送,Shift+Enter 换行,可粘贴或拖入附件)'
               }
               onChange={(e) => setDraft(e.target.value)}
               onPaste={(e) => {
-                // 只接管图片,普通文本粘贴照旧走默认行为
                 const files = Array.from(e.clipboardData.items)
-                  .filter((it) => it.kind === 'file' && /^image\/(png|jpeg|gif|webp)$/.test(it.type))
+                  .filter((it) => it.kind === 'file')
                   .map((it) => it.getAsFile())
                   .filter((f): f is File => f !== null)
-                if (files.length === 0) return
-                e.preventDefault()
-                for (const f of files) {
-                  const mediaType = f.type as ImageAttachment['mediaType']
-                  const reader = new FileReader()
-                  reader.onload = () => {
-                    const url = typeof reader.result === 'string' ? reader.result : ''
-                    const data = url.slice(url.indexOf(',') + 1)
-                    if (data) setImages((list) => [...list, { mediaType, data }])
+                const text = e.clipboardData.getData('text/plain')
+                if (files.length) {
+                  e.preventDefault()
+                  void composer.addFiles(files)
+                  // 同时有文件与文字时保留文字,不静默吞掉剪贴板内容。
+                  if (text.length > LONG_PASTE_THRESHOLD) void composer.addPaste(text)
+                  else if (text) {
+                    const start = e.currentTarget.selectionStart
+                    const end = e.currentTarget.selectionEnd
+                    setDraft(draft.slice(0, start) + text + draft.slice(end))
                   }
-                  reader.readAsDataURL(f)
+                } else if (text.length > LONG_PASTE_THRESHOLD) {
+                  e.preventDefault()
+                  void composer.addPaste(text)
                 }
               }}
               onKeyDown={(e) => {
@@ -1367,7 +1445,9 @@ export default function App(): React.JSX.Element {
               model={config?.model ?? 'default'}
               effort={config?.effort ?? 'medium'}
               busy={busy}
-              canSend={Boolean(draft.trim()) || images.length > 0}
+              canSend={!attachmentProcessing && !attachmentFiles.some((f) => f.status !== 'ready') && (Boolean(draft.trim()) || attachmentFiles.length > 0)}
+              onAttach={() => void composer.choose()}
+              attaching={attachmentProcessing}
               context={context}
               usage={usage}
               contextWarnAt={CONTEXT_WARN_AT}

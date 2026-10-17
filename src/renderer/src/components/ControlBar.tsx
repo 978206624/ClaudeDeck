@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import ContextRing from './ContextRing.js'
 import Popover from './Popover.js'
 import TaskChip from './TaskChip.js'
+import { AttachmentIcon } from './AttachmentCards.js'
 import {
   EFFORT_LEVELS,
   PERMISSION_MODES,
@@ -28,6 +29,8 @@ export default function ControlBar({
   effort,
   busy,
   canSend,
+  onAttach,
+  attaching,
   onMode,
   onModel,
   onEffort,
@@ -48,6 +51,8 @@ export default function ControlBar({
   effort: EffortLevel
   busy: boolean
   canSend: boolean
+  onAttach?: () => void
+  attaching?: boolean
   onMode: (m: PermissionMode) => void
   onModel: (v: string) => void
   onEffort: (v: EffortLevel) => void
@@ -113,6 +118,7 @@ export default function ControlBar({
 
   return (
     <div className="controls">
+      {onAttach && <button className="chip attachment-add" aria-label="添加附件" title="添加图片、文档或文本" disabled={attaching} onClick={onAttach}><AttachmentIcon /></button>}
       {/* ---- 权限 ---- */}
       <div className="control-slot">
         <button

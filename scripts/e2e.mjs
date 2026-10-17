@@ -441,12 +441,13 @@ try {
   }
   if (want(7)) {
     console.log('\n[7/11] 文件树与配置读写')
-    // 每个项目下都有「文件」入口(原先只有当前聚焦的项目才有 .claude 节点)
-    const fileNodes = await page.$$eval('.claude-node', (n) => n.length)
+    // 每个项目行都有文件图标,与会话列表分开。
+    const fileNodes = await page.$$eval('.project-files', (n) => n.length)
     const projectCount = await page.$$eval('.project-row', (n) => n.length)
     check('每个项目都有文件入口', fileNodes === projectCount, `${fileNodes} / ${projectCount} 个项目`)
 
-    await page.click('.claude-node')
+    await page.locator('.project-line').first().hover()
+    await page.locator('.project-files').first().click()
     await page.waitForSelector('.file-row', { timeout: 10_000 })
     const rootNames = await page.$$eval('.file-row .file-name', (n) => n.map((e) => e.textContent?.trim()))
     check(

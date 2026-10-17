@@ -37,7 +37,6 @@ export default function Sidebar({
   onToggleCollapse,
   onExpandAll,
   onAddProject,
-  onManageProjects,
   theme,
   onTheme,
   filesProject,
@@ -59,7 +58,6 @@ export default function Sidebar({
   onToggleCollapse: (path: string, collapsed: boolean) => void
   onExpandAll: (path: string) => void
   onAddProject: () => void
-  onManageProjects: () => void
   theme: ThemePref
   onTheme: (t: ThemePref) => void
   /** 中栏正在浏览哪个项目的文件,没有就是 null */
@@ -90,9 +88,6 @@ export default function Sidebar({
         <div className="group-head">
           <span>项目 · {projects.length}</span>
           <span className="spacer" />
-          <button className="ghost" title="管理项目" onClick={onManageProjects}>
-            ···
-          </button>
           <button className="ghost" title="添加项目" onClick={onAddProject}>
             ＋
           </button>
@@ -139,6 +134,15 @@ export default function Sidebar({
                   <span className="count">{sessions.length}</span>
                 </button>
                 <button
+                  className="ghost icon-btn project-files"
+                  aria-label={`浏览 ${project.name} 的文件`}
+                  aria-pressed={filesProject === project.path}
+                  title={`浏览 ${project.name} 的文件`}
+                  onClick={() => onOpenFiles(project.path)}
+                >
+                  <FolderIcon />
+                </button>
+                <button
                   className="ghost icon-btn project-add"
                   title={`在 ${project.name} 里新建会话`}
                   onClick={() => onNewSessionIn(project.path)}
@@ -149,25 +153,6 @@ export default function Sidebar({
 
               {open && (
                 <>
-                  {/*
-                    文件入口挂在项目名和会话之间。
-                    原先这里是个只认 `.claude` 的节点,而且只有当前聚焦的项目才有 ——
-                    「为什么别的项目看不到配置」正是这么来的。现在每个项目都有,
-                    `.claude` 只是树里的一个普通文件夹。
-                  */}
-                  <button
-                    className="claude-node"
-                    aria-current={filesProject === project.path}
-                    onClick={() => onOpenFiles(project.path)}
-                    title={`浏览 ${project.name} 的文件`}
-                  >
-                    <span className="caret">
-                      <CaretIcon />
-                    </span>
-                    <FolderIcon className="folder" />
-                    <span className="label">文件</span>
-                  </button>
-
                   {sessions.length === 0 && (
                     <div className="hint session-empty">这个项目下还没有会话。</div>
                   )}

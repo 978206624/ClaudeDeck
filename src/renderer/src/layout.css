@@ -230,6 +230,90 @@ kbd,
   gap: var(--s8);
 }
 
+.project-picker-host {
+  flex: 1;
+  min-height: 0;
+}
+
+.project-create {
+  padding: var(--s20);
+}
+
+.project-create .card {
+  max-width: 640px;
+  max-height: calc(100vh - 2 * var(--s20));
+  overflow-y: auto;
+  box-shadow: var(--shadow-popover);
+}
+
+.project-create-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s16);
+}
+
+.project-create button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.project-create-name {
+  display: flex;
+  align-items: center;
+  gap: var(--s12);
+  padding: 0 var(--s16);
+  border: 1px solid var(--border);
+  border-radius: var(--r-control);
+}
+
+.project-create-name:focus-within {
+  border-color: var(--accent);
+}
+
+.project-create-name input {
+  width: 100%;
+  min-width: 0;
+  height: 48px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.project-create-source {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s16);
+  min-height: 128px;
+  padding: var(--s20);
+  border: 1px solid var(--border);
+  border-radius: var(--r-control);
+}
+
+.project-create-source button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s6);
+  background: var(--bg);
+  border-radius: var(--r-pill);
+}
+
+.project-create-path {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
+  font-size: var(--text-ui-s);
+}
+
+.project-create-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s16);
+  margin-top: var(--s16);
+}
+
 .step-label {
   display: flex;
   align-items: baseline;
@@ -940,7 +1024,7 @@ kbd,
   color: var(--accent);
 }
 
-/* 项目行右侧的「在这个项目里新建会话」,悬停才出现 */
+/* 文件与新建会话是项目级动作,不占用会话列表 */
 .project-line {
   display: flex;
   align-items: center;
@@ -949,6 +1033,37 @@ kbd,
 .project-line .project-row {
   flex: 1;
   min-width: 0;
+}
+
+.project-line .project-files {
+  flex: none;
+  margin-right: var(--s4);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+
+.project-line:hover .project-files,
+.project-line:focus-within .project-files,
+.project-line .project-files[aria-pressed='true'] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.project-line .project-files[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.project-files:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-line .project-files {
+    transition: none;
+  }
 }
 
 /* 常显。终稿里它是侧栏上除「当前项」之外唯一带陶土的元件。
@@ -985,30 +1100,6 @@ kbd,
   font-family: var(--font-mono);
   font-size: var(--text-mono-m);
   color: var(--muted-2);
-}
-
-/* .claude 节点挂在项目名和会话之间 · §10 */
-.claude-node {
-  display: flex;
-  align-items: center;
-  gap: var(--s8);
-  width: 100%;
-  text-align: left;
-  border-color: transparent;
-  background: transparent;
-  padding: var(--s6) var(--s8);
-  margin-left: var(--s16);
-  width: calc(100% - var(--s16));
-  border-radius: var(--r-control);
-  color: var(--ink-2);
-}
-
-.claude-node:hover {
-  background: var(--bg);
-}
-
-.claude-node .mono {
-  flex: 1;
 }
 
 /* §05:当前会话是 8px 圆角块 + 2px 陶土内条,其他会话不画容器 */
@@ -2562,6 +2653,7 @@ kbd,
    陶土左条 = 在拦你(计划卡是沙绿左条 = 在等你满意)。 */
 .permission-card {
   width: 100%;
+  min-width: 0;
   max-width: var(--w-prose);
   background: var(--raised);
   border: 1px solid var(--border);
@@ -2570,6 +2662,26 @@ kbd,
   padding: var(--s16);
   display: grid;
   gap: var(--s6);
+  overflow-wrap: anywhere;
+}
+
+.permission-card .row {
+  flex-wrap: wrap;
+}
+
+.permission-card .row > button:not(.card-remember) {
+  flex: none;
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.permission-card .card-remember {
+  flex-basis: 100%;
+  min-width: 0;
+  min-height: 44px;
+  margin-left: 0;
+  text-align: left;
+  white-space: normal;
 }
 
 .card-label {
@@ -2713,14 +2825,19 @@ button.todo-box {
   bottom: calc(100% - var(--s12));
   z-index: 30;
   max-height: 320px;
+  min-width: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 1fr auto;
   padding: var(--s6) var(--s6) 0;
 }
 
 .palette-list {
+  min-width: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1px;
   align-content: start;
 }
@@ -2736,6 +2853,7 @@ button.todo-box {
   align-items: baseline;
   gap: var(--s8);
   width: 100%;
+  min-width: 0;
   text-align: left;
   border: none;
   background: transparent;
@@ -2750,6 +2868,10 @@ button.todo-box {
 
 .palette-name {
   flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: var(--text-mono-l);
   color: var(--ink);
@@ -2767,7 +2889,12 @@ button.todo-box {
 
 .palette-hint,
 .palette-alias {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 20%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: var(--text-mono-s);
   color: var(--muted-2);
@@ -3148,6 +3275,8 @@ button.todo-box {
 }
 
 .composer {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-bubble);
@@ -3176,6 +3305,111 @@ button.todo-box {
   outline: none;
   border: none;
 }
+
+/* 附件沿用输入卡的主题,不因长文件名引入横向滚动。 */
+.composer.file-dragging { border-color: var(--focus); }
+
+.attachment-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s8);
+  max-height: 180px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--s4);
+}
+
+.attachment-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  width: 220px;
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-inline);
+  background: var(--raised);
+}
+
+.attachment-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--s8);
+  min-width: 0;
+  padding: var(--s8);
+  text-align: left;
+  background: transparent;
+  border: 0;
+}
+
+.attachment-preview > svg,
+.message-attachment > svg { flex-shrink: 0; }
+
+.attachment-preview > img {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-inline);
+  object-fit: cover;
+}
+
+.attachment-label { display: grid; min-width: 0; gap: 2px; }
+.attachment-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.attachment-detail,
+.attachment-hint { color: var(--ink-2); font-size: var(--text-ui-s); }
+.attachment-remove { padding: 0; width: 28px; height: 32px; background: transparent; border: 0; }
+
+.attachment-file-error {
+  grid-column: 1 / -1;
+  color: var(--warn);
+  font-size: var(--text-ui-s);
+  overflow-wrap: anywhere;
+  padding: 0 var(--s8) var(--s8);
+}
+
+.attachment-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+}
+
+.attachment-add > svg { flex-shrink: 0; }
+.attachment-preview:disabled { opacity: 1; }
+.attachment-card.failed { border-color: var(--warn); }
+
+.attachment-dialog {
+  padding: 0;
+  width: min(720px, calc(100vw - 48px));
+  max-height: calc(100vh - 80px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-bubble);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.attachment-dialog::backdrop { background: rgb(0 0 0 / 35%); }
+.attachment-dialog-body { display: grid; gap: var(--s12); padding: var(--s16); min-width: 0; }
+.attachment-dialog-heading { display: flex; align-items: center; gap: var(--s8); }
+.attachment-dialog-heading > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.attachment-dialog-body pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 50vh;
+  overflow-y: auto;
+  font-size: var(--text-ui-s);
+  margin: 0;
+}
+
+.attachment-large-image { max-width: 100%; max-height: 60vh; object-fit: contain; justify-self: center; }
+.message-attachments { display: flex; flex-wrap: wrap; gap: var(--s8); margin-bottom: var(--s8); }
+.message-attachment { display: inline-flex; align-items: center; gap: var(--s8); min-width: 0; max-width: 100%; padding: var(--s8); border: 1px solid var(--border); border-radius: var(--r-inline); }
+.message-attachment > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.message-attachment small { flex-shrink: 0; }
 
 /* 粘贴进来还没发出去的图片 —— 缩略图一排,发送前可逐张移除 */
 .attach-row {
