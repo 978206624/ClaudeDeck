@@ -50,6 +50,8 @@ const api = {
   projects: {
     add: (): Promise<AppConfig> => ipcRenderer.invoke('projects:add'),
     activate: (path: string): Promise<AppConfig> => ipcRenderer.invoke('projects:activate', path),
+    rename: (path: string, name: string): Promise<AppConfig> =>
+      ipcRenderer.invoke('projects:rename', path, name),
     remove: (path: string): Promise<AppConfig> => ipcRenderer.invoke('projects:remove', path),
     collapse: (path: string, collapsed: boolean): Promise<AppConfig> =>
       ipcRenderer.invoke('projects:collapse', path, collapsed),

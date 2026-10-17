@@ -9,6 +9,7 @@ import Message from './components/Message.js'
 import FileTree from './components/FileTree.js'
 import MidColumn from './components/MidColumn.js'
 import PlanCard from './components/PlanCard.js'
+import ProjectMenu from './components/ProjectMenu.js'
 import SearchPalette from './components/SearchPalette.js'
 import SessionMenu from './components/SessionMenu.js'
 import SettingsDialog from './components/SettingsDialog.js'
@@ -18,10 +19,11 @@ import Markdown from './components/Markdown.js'
 import AgentsPanel from './components/AgentsPanel.js'
 import McpPanel from './components/McpPanel.js'
 import Resizer from './components/Resizer.js'
-import { clampMidcol, clampSidebar, loadWidths, saveWidths } from './lib/columns.js'
+import { CHAT_MIN, clampMidcol, clampSidebar, loadWidths, saveWidths } from './lib/columns.js'
 import Thinking from './components/Thinking.js'
 import Thought from './components/Thought.js'
 import ToolRow from './components/ToolRow.js'
+import ToolGroup from './components/ToolGroup.js'
 import Loading from './screens/Loading.js'
 import Onboarding from './screens/Onboarding.js'
 import ProjectPicker from './screens/ProjectPicker.js'
@@ -121,14 +123,28 @@ function stamp(item: TranscriptItem): TranscriptItem {
 const TranscriptList = memo(function TranscriptList({
   items,
   onFork,
+  busy,
 }: {
   items: TranscriptItem[]
   onFork: (id: string) => void
+  busy: boolean
 }): React.JSX.Element {
+  const groups: (TranscriptItem | { kind: 'toolGroup'; rows: ToolRowData[] })[] = []
+  for (const item of items) {
+    if (item.kind === 'tool' && item.row.tool !== 'todo' && !item.row.failed &&
+      !(item.row.tool === 'bash' && (item.row.interrupted || item.row.stderr?.trim())) &&
+      !(item.row.tool === 'other' && ['AskUserQuestion', 'ExitPlanMode'].includes(item.row.name))) {
+      const previous = groups[groups.length - 1]
+      if (previous?.kind === 'toolGroup') previous.rows.push(item.row)
+      else groups.push({ kind: 'toolGroup', rows: [item.row] })
+    } else groups.push(item)
+  }
   return (
     <>
-      {items.map((item, i) =>
-        item.kind === 'tool' ? (
+      {groups.map((item, i) =>
+        item.kind === 'toolGroup' ? (
+          <ToolGroup key={`tools-${item.rows[0].id}`} rows={item.rows} running={busy && i === groups.length - 1} />
+        ) : item.kind === 'tool' ? (
           <ToolRow key={item.row.id} row={item.row} />
         ) : item.kind === 'thinking' ? (
           <Thought key={item.uid ?? `i${i}`} text={item.text} />
@@ -194,6 +210,11 @@ export default function App(): React.JSX.Element {
     session: SessionListItem
     at: { x: number; y: number }
   } | null>(null)
+  const [projectMenu, setProjectMenu] = useState<{
+    project: AppConfig['projects'][number]
+    at: { x: number; y: number }
+    trigger: HTMLButtonElement
+  } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   /** 粘贴进输入框、还没发出去的图片 */
@@ -204,6 +225,7 @@ export default function App(): React.JSX.Element {
   const [paletteIndex, setPaletteIndex] = useState(0)
   const [controlRequest, setControlRequest] = useState<'model' | 'effort' | null>(null)
   const [widths, setWidths] = useState(loadWidths)
+  const [viewportWidth, setViewportWidth] = useState(window.innerWidth)
   const [turnStartedAt, setTurnStartedAt] = useState(0)
   const [turnStatus, setTurnStatus] = useState<TurnStatus>(null)
   const [outputTokens, setOutputTokens] = useState(0)
@@ -216,6 +238,12 @@ export default function App(): React.JSX.Element {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [openFile, setOpenFile] = useState<{ project: string; path: string } | null>(null)
   const [fileDirty, setFileDirty] = useState(false)
+
+  useEffect(() => {
+    const onResize = (): void => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
   const [tasks, setTasks] = useState<BackgroundTask[]>([])
   const [forkFrom, setForkFrom] = useState<string | null>(null)
   /** 刚发出、还没在 SDK 的 store 里露面的那条会话 —— 侧栏先摆着 */
@@ -228,6 +256,7 @@ export default function App(): React.JSX.Element {
    */
   const [deletedSessions, setDeletedSessions] = useState<string[]>([])
   const transcriptRef = useRef<HTMLDivElement>(null)
+  const [showLatest, setShowLatest] = useState(false)
   const composerRef = useRef<HTMLTextAreaElement>(null)
 
   const activeSessionRef = useRef<string | null>(null)
@@ -519,6 +548,7 @@ export default function App(): React.JSX.Element {
     if (!el) return
     const onScroll = (): void => {
       stickRef.current = el.scrollHeight - el.clientHeight - el.scrollTop < 24
+      setShowLatest(!stickRef.current)
     }
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
@@ -538,6 +568,7 @@ export default function App(): React.JSX.Element {
   // 换会话就当作重新贴底:载入的是另一段历史,应当看见最后一条
   useEffect(() => {
     stickRef.current = true
+    setShowLatest(false)
     const el = transcriptRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [activeSession])
@@ -677,6 +708,37 @@ export default function App(): React.JSX.Element {
 
   async function newSession(projectPath?: string): Promise<void> {
     await selectSession(projectPath)
+  }
+
+  async function removeListedProject(path: string): Promise<void> {
+    // 移除后该目录不再可写,不能留下失去保存权限的草稿。
+    if (openFile?.project === path && dirtyRef.current) {
+      throw new Error('该项目有未保存的文件,请先保存或关闭文件后再移除。')
+    }
+    const generation = openGen.current
+    const removingActive = config?.activeWorkspace === path
+    const cfg = await window.api.projects.remove(path)
+    setConfig(cfg)
+    if (removingActive && generation === openGen.current) {
+      if (cfg.activeWorkspace) {
+        await newSession(cfg.activeWorkspace)
+      } else {
+        ++openGen.current
+        viewIdRef.current = ''
+        resetTurnState()
+        setTranscript([])
+        setActiveSession(null)
+        activeSessionRef.current = null
+        setPendingSession(null)
+        setPhase('projects')
+      }
+    }
+    // 项目移除已经成功,列表刷新失败不能让人再次提交移除。
+    try {
+      await refreshSessions()
+    } catch (err) {
+      setError(`会话列表刷新失败:${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   async function send(): Promise<void> {
@@ -835,16 +897,20 @@ export default function App(): React.JSX.Element {
 
   /** 中栏开着没有 —— 树和文件都算 */
   const midOpen = openFile !== null || filesProject !== null
+  const visibleSidebarWidth = sidebarOpen ? widths.sidebar : 0
+  const fileWidth = viewportWidth <= 1040
+    ? Math.min(widths.midcol, viewportWidth - visibleSidebarWidth)
+    : clampMidcol(widths.midcol, { viewport: viewportWidth, sidebar: visibleSidebarWidth })
   const projectNameOf = (path: string): string =>
     config?.projects.find((p) => p.path === path)?.name ?? path
 
   // 窗口左边缘就是 shell 的左边缘(没有更外层的容器),所以 clientX 直接
-  // 就是侧栏宽度;中栏那道线要先减掉侧栏。
+  // 就是侧栏宽度;右侧文件区从窗口右边缘反向计算。
   function resizeSidebar(px: number): void {
     const next = clampSidebar(px, {
       viewport: window.innerWidth,
-      midcol: widths.midcol,
-      midOpen,
+      midcol: fileWidth,
+      midOpen: midOpen && window.innerWidth > 1040,
     })
     const w = { ...widths, sidebar: next }
     setWidths(w)
@@ -852,7 +918,10 @@ export default function App(): React.JSX.Element {
   }
 
   function resizeMidcol(px: number): void {
-    const next = clampMidcol(px, { viewport: window.innerWidth, sidebar: widths.sidebar })
+    const next = clampMidcol(px, {
+      viewport: window.innerWidth + (window.innerWidth <= 1040 ? CHAT_MIN : 0),
+      sidebar: visibleSidebarWidth,
+    })
     const w = { ...widths, midcol: next }
     setWidths(w)
     saveWidths(w)
@@ -865,7 +934,7 @@ export default function App(): React.JSX.Element {
       style={
         {
           '--w-sidebar': `${widths.sidebar}px`,
-          '--w-midcol': `${widths.midcol}px`,
+          '--w-midcol': `${fileWidth}px`,
         } as React.CSSProperties
       }
     >
@@ -916,7 +985,14 @@ export default function App(): React.JSX.Element {
         onNewSession={() => void newSession()}
         onNewSessionIn={(path) => void newSession(path)}
         onOpenSession={(p, id) => void openSession(p, id)}
-        onSessionMenu={(session, at) => setMenu({ session, at })}
+        onSessionMenu={(session, at) => {
+          setProjectMenu(null)
+          setMenu({ session, at })
+        }}
+        onProjectMenu={(project, at, trigger) => {
+          setMenu(null)
+          setProjectMenu({ project, at, trigger })
+        }}
         onToggleCollapse={async (path, collapsed) => {
           setConfig(await window.api.projects.collapse(path, collapsed))
         }}
@@ -952,33 +1028,9 @@ export default function App(): React.JSX.Element {
         <Resizer
           className="resizer-midcol"
           label="调整文件栏宽度"
-          onDrag={(x) => resizeMidcol(x - widths.sidebar)}
-          onNudge={(d) => resizeMidcol(widths.midcol + d)}
+          onDrag={(x) => resizeMidcol(window.innerWidth - x)}
+          onNudge={(d) => resizeMidcol(fileWidth - d)}
         />
-      )}
-
-      {/* 中栏两种形态:开着某个文件就看文件,否则看这个项目的文件树 */}
-      {openFile ? (
-        <MidColumn
-          projectPath={openFile.project}
-          projectName={projectNameOf(openFile.project)}
-          relPath={openFile.path}
-          onClose={() => {
-            setOpenFile(null)
-            setFilesProject(null)
-          }}
-          onBack={filesProject ? () => setOpenFile(null) : undefined}
-          onDirtyChange={setFileDirty}
-        />
-      ) : (
-        filesProject && (
-          <FileTree
-            projectPath={filesProject}
-            projectName={projectNameOf(filesProject)}
-            onClose={() => setFilesProject(null)}
-            onOpenFile={(relPath) => setOpenFile({ project: filesProject, path: relPath })}
-          />
-        )
       )}
 
       <main className="main">
@@ -1020,7 +1072,7 @@ export default function App(): React.JSX.Element {
             </div>
           )}
 
-          <TranscriptList items={transcript} onFork={setForkFrom} />
+          <TranscriptList key={activeSession ?? 'new'} items={transcript} onFork={setForkFrom} busy={busy} />
 
           {/* 正在想的那一段:自动展开,让人看着它在动 */}
           {thinking && <Thought text={thinking} live />}
@@ -1071,7 +1123,7 @@ export default function App(): React.JSX.Element {
                 )}
               </div>
               {/* 改文件的批准先看得见改什么 —— diff 预览复用工具行 */}
-              {permission.preview && <ToolRow row={permission.preview} />}
+              {permission.preview && <ToolRow row={permission.preview} defaultExpanded />}
               {permission.decisionReason && <div className="hint">{permission.decisionReason}</div>}
               {permission.blockedPath && (
                 <div className="hint">
@@ -1199,6 +1251,17 @@ export default function App(): React.JSX.Element {
 
           {error && <div className="error-line">{error}</div>}
         </div>
+
+        {showLatest && (
+          <button className="scroll-latest" onClick={() => {
+            stickRef.current = true
+            const el = transcriptRef.current
+            if (el) el.scrollTop = el.scrollHeight
+            setShowLatest(false)
+          }}>
+            回到最新
+          </button>
+        )}
 
         {/* §05:输入框与控件条是同一张卡,控件在卡内底部 */}
         <div className="composer-wrap" inert={switching} aria-busy={switching}>
@@ -1344,6 +1407,52 @@ export default function App(): React.JSX.Element {
         </div>
 
       </main>
+
+      {/* 文件树与文件内容共用右侧区域,对话组件始终保留 */}
+      {openFile ? (
+        <MidColumn
+          key={`${openFile.project}/${openFile.path}`}
+          projectPath={openFile.project}
+          projectName={projectNameOf(openFile.project)}
+          relPath={openFile.path}
+          onClose={() => {
+            setOpenFile(null)
+            setFilesProject(null)
+          }}
+          onBack={filesProject ? () => setOpenFile(null) : undefined}
+          onDirtyChange={setFileDirty}
+        />
+      ) : (
+        filesProject && (
+          <FileTree
+            projectPath={filesProject}
+            projectName={projectNameOf(filesProject)}
+            onClose={() => setFilesProject(null)}
+            onOpenFile={(relPath) => {
+              setWidths((cur) => ({ ...cur, midcol: Math.max(cur.midcol, 480) }))
+              setOpenFile({ project: filesProject, path: relPath })
+            }}
+          />
+        )
+      )}
+
+      {projectMenu && (
+        <ProjectMenu
+          key={projectMenu.project.path}
+          project={projectMenu.project}
+          at={projectMenu.at}
+          onClose={() => {
+            const target = projectMenu.trigger.isConnected ? projectMenu.trigger
+              : document.querySelector<HTMLButtonElement>('.project-row, .screen-center button.primary')
+            target?.focus()
+            setProjectMenu((current) => current === projectMenu ? null : current)
+          }}
+          onRename={async (name) => {
+            setConfig(await window.api.projects.rename(projectMenu.project.path, name))
+          }}
+          onRemove={() => removeListedProject(projectMenu.project.path)}
+        />
+      )}
 
       {menu && (
         <SessionMenu

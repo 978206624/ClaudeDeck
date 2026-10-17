@@ -33,6 +33,7 @@ export default function Sidebar({
   onNewSessionIn,
   onOpenSession,
   onSessionMenu,
+  onProjectMenu,
   onToggleCollapse,
   onExpandAll,
   onAddProject,
@@ -54,6 +55,7 @@ export default function Sidebar({
   onNewSessionIn: (projectPath: string) => void
   onOpenSession: (projectPath: string, sessionId: string) => void
   onSessionMenu: (session: SessionListItem, at: { x: number; y: number }) => void
+  onProjectMenu: (project: Project, at: { x: number; y: number }, trigger: HTMLButtonElement) => void
   onToggleCollapse: (path: string, collapsed: boolean) => void
   onExpandAll: (path: string) => void
   onAddProject: () => void
@@ -115,7 +117,18 @@ export default function Sidebar({
                   className="project-row"
                   aria-expanded={open}
                   aria-current={project.path === activeWorkspace}
+                  aria-haspopup="menu"
                   title={project.path}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    onProjectMenu(project, { x: e.clientX, y: e.clientY }, e.currentTarget)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'ContextMenu' && !(e.shiftKey && e.key === 'F10')) return
+                    e.preventDefault()
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    onProjectMenu(project, { x: rect.left, y: rect.bottom }, e.currentTarget)
+                  }}
                   onClick={() => onToggleCollapse(project.path, open)}
                 >
                   <span className="caret">

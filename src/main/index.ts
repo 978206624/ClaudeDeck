@@ -14,6 +14,7 @@ import {
   addProject,
   getConfig,
   removeProject,
+  renameProject,
   setActiveWorkspace,
   setApiKey,
   setProjectCollapsed,
@@ -290,6 +291,7 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('projects:activate', (_e, path: string) => setActiveWorkspace(path))
+  ipcMain.handle('projects:rename', (_e, path: string, name: string) => renameProject(path, name))
   ipcMain.handle('projects:remove', (_e, path: string) => {
     sessions.remove(path)
     return removeProject(path)

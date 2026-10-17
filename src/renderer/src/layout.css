@@ -484,7 +484,7 @@ kbd,
 }
 
 .resizer-midcol {
-  left: calc(var(--w-sidebar) + var(--w-midcol));
+  left: calc(100% - var(--w-midcol));
 }
 
 /* 悬停和拖动时才把线点亮 —— 平时它就该是一道安静的边框 */
@@ -504,9 +504,9 @@ kbd,
   outline: none;
 }
 
-/* §10:中栏打开时 264 + 320 + 剩下的 */
+/* 文件放在对话右侧,右侧宽度随可用空间收缩 */
 .shell.with-mid {
-  grid-template-columns: var(--w-sidebar) var(--w-midcol) 1fr;
+  grid-template-columns: var(--w-sidebar) minmax(0, 1fr) var(--w-midcol);
 }
 
 /* 侧栏收起:那一列整个去掉,不是宽度归零 —— 归零的话里面的内容还在,
@@ -516,7 +516,11 @@ kbd,
 }
 
 .shell.no-sidebar.with-mid {
-  grid-template-columns: var(--w-midcol) 1fr;
+  grid-template-columns: minmax(0, 1fr) var(--w-midcol);
+}
+
+.shell.no-sidebar {
+  --w-sidebar: 0px;
 }
 
 /* ---- .claude 配置栏 · §10 ---- */
@@ -579,7 +583,7 @@ kbd,
   min-width: 0;
   position: relative;
   background: var(--raised);
-  border-right: 1px solid var(--border);
+  border-left: 1px solid var(--border);
 }
 
 .midcol-head {
@@ -646,7 +650,7 @@ kbd,
 
 .midcol-body {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
 }
@@ -665,6 +669,7 @@ kbd,
 }
 
 .midcol-text {
+  min-width: 0;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -681,6 +686,74 @@ kbd,
 .midcol-text:focus {
   outline: none;
   border: none;
+}
+
+.file-content {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.file-content:has(.midcol-error) {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
+.file-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--s8);
+  padding: var(--s8) var(--s16);
+  border-bottom: 1px solid var(--border);
+}
+
+.file-view-switch {
+  display: flex;
+  gap: var(--s4);
+}
+
+.file-toolbar button {
+  padding: var(--s4) var(--s8);
+  font-size: var(--text-ui-s);
+}
+
+.file-view-switch button[aria-pressed='true'] {
+  background: var(--bubble);
+  color: var(--ink);
+  border-color: var(--border);
+}
+
+.file-expand {
+  margin-left: auto;
+}
+
+.file-preview {
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--s26) var(--s20);
+  font-family: var(--font-ui);
+  font-size: var(--text-ui-m);
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.file-preview > .md {
+  max-width: var(--w-prose);
+  margin: 0 auto;
+}
+
+.midcol.expanded {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--w-sidebar);
+  right: 0;
+  width: auto;
+  z-index: 25;
+}
+
+.shell:has(.midcol.expanded) > .main,
+.shell:has(.midcol.expanded) > .resizer-midcol {
+  visibility: hidden;
 }
 
 /* 关掉或切走时才拦这一次 */
@@ -709,21 +782,29 @@ kbd,
   justify-content: flex-end;
 }
 
-/* §09:940 时中栏改成盖在对话区上的浮层 ——
-   264 + 320 之后只剩 356px,气泡就没法读了 */
+/* 窄窗口文件区靠右浮在对话上,不挤压对话列 */
 @media (max-width: 1040px) {
-  .shell.with-mid {
-    grid-template-columns: var(--w-sidebar) 1fr;
+  .shell.with-mid,
+  .shell.no-sidebar.with-mid {
+    grid-template-columns: var(--w-sidebar) minmax(0, 1fr);
+  }
+
+  .shell.no-sidebar.with-mid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .midcol {
     position: absolute;
     top: 0;
     bottom: 0;
-    left: var(--w-sidebar);
+    right: 0;
     width: var(--w-midcol);
     z-index: 25;
     box-shadow: var(--shadow-popover);
+  }
+
+  .resizer-midcol {
+    z-index: 26;
   }
 }
 
@@ -1082,6 +1163,7 @@ kbd,
 /* ---- 主区 ---- */
 
 .main {
+  --conversation-padding: var(--s20);
   display: grid;
   grid-template-rows: auto 1fr auto;
   min-height: 0;
@@ -1544,19 +1626,53 @@ kbd,
 /* ---- 对话区 ---- */
 
 .transcript {
+  grid-area: 2 / 1;
+  overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   min-height: 0;
-  padding: var(--s26) var(--s20);
+  min-width: 0;
+  padding: var(--s26) var(--conversation-padding);
   display: grid;
+  grid-template-columns: minmax(0, min(100%, var(--w-prose)));
   gap: var(--s20);
   align-content: start;
+  justify-content: center;
   justify-items: start;
+}
+
+.transcript::-webkit-scrollbar {
+  width: var(--s8);
+}
+
+.transcript::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: var(--r-pill);
+}
+
+.transcript > * {
+  min-width: 0;
+}
+
+.scroll-latest {
+  grid-area: 2 / 1;
+  align-self: end;
+  justify-self: end;
+  z-index: 1;
+  margin: 0 var(--s26) var(--s16) 0;
+  padding: var(--s6) var(--s12);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--text-ui-s);
 }
 
 /* §06 用户 · 靠右 · 有气泡 · 最宽 560 */
 .msg-user {
   justify-self: end;
-  max-width: var(--w-bubble);
+  max-width: min(var(--w-bubble), 100%);
+  overflow-wrap: anywhere;
   background: var(--bubble);
   border-radius: var(--r-bubble);
   padding: var(--s12) var(--s16);
@@ -1592,7 +1708,10 @@ kbd,
 /* §06 Claude · 靠左 · 无气泡 · 最宽 720 · Source Serif 正文 */
 .msg-claude {
   justify-self: start;
-  max-width: var(--w-prose);
+  max-width: min(var(--w-prose), 100%);
+  width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-family: var(--font-prose);
   font-size: var(--text-prose);
   line-height: var(--leading-prose);
@@ -1771,6 +1890,7 @@ kbd,
 
 .msg-wrap {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s4);
   width: 100%;
 }
@@ -1801,10 +1921,70 @@ kbd,
 /* ---- 工具行 · §06 ----
  * 默认只有一行标题,视觉权重低于正文。有输出的给展开/收起。 */
 
+.tool-group {
+  width: 100%;
+  max-width: min(var(--w-prose), 100%);
+}
+
+.tool-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s8);
+  width: 100%;
+  min-width: 0;
+  padding: var(--s6) 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: var(--text-ui-s);
+  color: var(--muted);
+}
+
+.tool-group-head:hover {
+  background: transparent;
+  color: var(--ink-2);
+}
+
+.tool-group-head > svg,
+.tool-group-head > span:first-of-type {
+  flex: none;
+}
+
+.tool-group-summary {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tool-group-current {
+  margin-left: var(--s20);
+  font-size: var(--text-ui-s);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.tool-group-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s12);
+  margin: var(--s8) 0 0 var(--s20);
+  padding-left: var(--s12);
+  border-left: 1px solid var(--border);
+}
+
+.tool-group-body .tool-arg {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tool-group-body .tool-toggle {
+  flex: none;
+}
+
 .tool-block,
 .tool-row {
   justify-self: start;
-  max-width: var(--w-prose);
+  max-width: min(var(--w-prose), 100%);
   width: 100%;
 }
 
@@ -1881,13 +2061,13 @@ kbd,
   font-size: var(--text-mono-m);
   line-height: 1.6;
   color: var(--ink-2);
-  max-height: 260px;
-  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .tool-cmd-line {
   display: block;
-  white-space: pre;
+  white-space: pre-wrap;
 }
 
 .tool-cmd-mark {
@@ -1904,10 +2084,13 @@ kbd,
   background: var(--bg);
   border-radius: var(--r-control);
   padding: var(--s8) var(--s12);
-  max-height: 260px;
-  overflow: auto;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   line-height: 1.6;
+}
+
+.tool-output-more {
+  margin: var(--s6) 0 0 22px;
 }
 
 /* ---- Edit 的 diff · §06 ----
@@ -1959,7 +2142,7 @@ kbd,
 /* 加删记号占左侧一个固定槽位,正文另起一列 —— 复制正文时不会带上记号 */
 .diff-line {
   display: grid;
-  grid-template-columns: 18px 1fr;
+  grid-template-columns: 18px minmax(0, 1fr);
   color: var(--ink-2);
 }
 
@@ -1971,6 +2154,7 @@ kbd,
 
 .diff-text {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   padding-right: var(--s12);
 }
 
@@ -2300,7 +2484,7 @@ kbd,
  * 灰、窄、默认折叠 —— 它是过程不是结论,不该和回答抢注意力。 */
 
 .thought {
-  max-width: var(--w-prose);
+  max-width: min(var(--w-prose), 100%);
   margin: 0 0 var(--s8);
 }
 
@@ -2349,6 +2533,7 @@ kbd,
   line-height: 1.7;
   color: var(--muted);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* ---- 等待态:忙着但还没开口的那段 ---- */
@@ -2523,8 +2708,8 @@ button.todo-box {
 
 .palette {
   position: absolute;
-  left: var(--s20);
-  right: var(--s20);
+  left: var(--conversation-padding);
+  right: var(--conversation-padding);
   bottom: calc(100% - var(--s12));
   z-index: 30;
   max-height: 320px;
@@ -2695,6 +2880,29 @@ button.todo-box {
 .ctx-confirm .row {
   justify-content: flex-end;
   margin-top: var(--s4);
+}
+
+/* 项目右键菜单沿用会话弹层,补齐表单与键盘焦点 */
+.project-menu {
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+}
+
+.project-menu strong,
+.project-menu-error {
+  overflow-wrap: anywhere;
+}
+
+.project-menu-error {
+  color: var(--warn);
+  font-size: var(--text-ui-s);
+}
+
+.project-menu :is(button, input):focus-visible,
+.project-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* 会话标签,跟在标题后面 */
@@ -2932,7 +3140,11 @@ button.todo-box {
 
 /* §05:输入框与控件条是同一张卡,控件在卡内底部 */
 .composer-wrap {
-  padding: var(--s12) var(--s20) var(--s16);
+  width: min(calc(100% - var(--s8)), calc(var(--w-prose) + 2 * var(--conversation-padding)));
+  min-width: 0;
+  justify-self: center;
+  margin-right: var(--s8);
+  padding: var(--s12) var(--conversation-padding) var(--s16);
 }
 
 .composer {
@@ -3434,10 +3646,9 @@ button.todo-box {
   }
 }
 
-/* 1600:侧栏不变宽,多出来的宽度全给对话区;正文仍封顶 720 并居左 */
+/* 1600:侧栏不变宽,多出来的宽度全给对话区;内容列仍封顶 720 并居中 */
 @media (min-width: 1600px) {
-  .transcript {
-    padding-left: var(--s32);
-    padding-right: var(--s32);
+  .main {
+    --conversation-padding: var(--s32);
   }
 }

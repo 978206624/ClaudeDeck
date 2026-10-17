@@ -532,8 +532,10 @@ try {
       )
       row?.click()
     })
+    await page.waitForSelector('.file-preview', { timeout: 10_000 })
+    await page.getByRole('button', { name: '编辑源码', exact: true }).click()
     await page.waitForSelector('.midcol-text', { timeout: 10_000 })
-    check('CLAUDE.md 可写,不标只读', (await page.$$eval('.midcol-ro', (n) => n.length)) === 0)
+    check('CLAUDE.md 默认预览,可切源码编辑且不标只读', (await page.$$eval('.midcol-ro', (n) => n.length)) === 0)
 
     // ✕ 是关掉整栏,不是退回树 —— 两颗按钮各管各的。
     // 它离右边界必须够远:那里压着 7px 的拖拽手柄,贴边就点不到了

@@ -385,6 +385,9 @@ console.log('\nclaudedir —— JSON 写坏要在保存前拦住并指出行号'
 
 // ---- 三栏宽度的夹逼 --------------------------------------------------------
 {
+  eq('文件区默认阅读宽度', MIDCOL.def, 480)
+  eq('文件区允许宽屏阅读', MIDCOL.max, 960)
+  eq('收起侧栏后使用释放的空间', clampMidcol(960, { viewport: 1200, sidebar: 0 }), 840)
   const wide = { viewport: 1600, midcol: MIDCOL.def, midOpen: false }
   eq('正常范围内原样返回', clampSidebar(300, wide), 300)
   eq('拖过窄夹到下限', clampSidebar(40, wide), SIDEBAR.min)
