@@ -166,7 +166,7 @@ export default function MidColumn({
 
       {preview ? (
         <div className="file-preview">
-          {loading ? <div className="hint">正在读取…</div> : <Markdown text={text} />}
+          {loading ? <div className="hint">正在读取…</div> : <Markdown text={text} projectPath={projectPath} baseDir={relPath.replace(/\\/g, '/').split('/').slice(0, -1).join('/')} />}
         </div>
       ) : (
         <div className="midcol-body">

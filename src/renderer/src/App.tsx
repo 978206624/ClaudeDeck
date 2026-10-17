@@ -16,6 +16,7 @@ import SettingsDialog from './components/SettingsDialog.js'
 import Sidebar from './components/Sidebar.js'
 import TitleBar from './components/TitleBar.js'
 import Markdown from './components/Markdown.js'
+import { ImageChatContext } from './components/ImageMenu.js'
 import AgentsPanel from './components/AgentsPanel.js'
 import McpPanel from './components/McpPanel.js'
 import Resizer from './components/Resizer.js'
@@ -127,10 +128,12 @@ const TranscriptList = memo(function TranscriptList({
   items,
   onFork,
   busy,
+  projectPath,
 }: {
   items: TranscriptItem[]
   onFork: (id: string) => void
   busy: boolean
+  projectPath?: string
 }): React.JSX.Element {
   const groups: (TranscriptItem | { kind: 'toolGroup'; rows: ToolRowData[] })[] = []
   for (const item of items) {
@@ -170,6 +173,7 @@ const TranscriptList = memo(function TranscriptList({
             images={item.kind === 'user' ? item.images : undefined}
             attachments={item.kind === 'user' ? item.attachments : undefined}
             onFork={onFork}
+            projectPath={projectPath}
           />
         ),
       )}
@@ -998,6 +1002,10 @@ export default function App(): React.JSX.Element {
 
   return (
     // 宽度变量放在最外层:标题栏要按侧栏宽度切换底色,它在 shell 之外
+    <ImageChatContext.Provider value={(project, source) => composer.addImage(project, () => {
+      if (typeof window.api.files.imageAttach !== 'function') throw new Error('图片操作接口尚未加载,请重启应用。')
+      return window.api.files.imageAttach(project, source)
+    })}>
     <div
       className={`app${sidebarOpen ? '' : ' no-sidebar'}`}
       style={
@@ -1053,7 +1061,6 @@ export default function App(): React.JSX.Element {
         account={account}
         versions={versions}
         expandedAll={expandedAll}
-        onNewSession={() => void newSession()}
         onNewSessionIn={(path) => void newSession(path)}
         onOpenSession={(p, id) => void openSession(p, id)}
         onSessionMenu={(session, at) => {
@@ -1133,12 +1140,12 @@ export default function App(): React.JSX.Element {
         <div className="transcript" ref={transcriptRef}>
           {transcript.length === 0 && !streaming && (
             <div className="empty-state">
-              <span className="brand-dot breathing" />
-              <div>问点什么开始。Claude Code 会在当前项目目录里读写文件。</div>
+              <h1>今天想做些什么?</h1>
+              <p>从一个问题开始。Claude Code 会在当前项目目录里读写文件。</p>
             </div>
           )}
 
-          <TranscriptList key={activeSession ?? 'new'} items={transcript} onFork={setForkFrom} busy={busy} />
+          <TranscriptList key={activeSession ?? 'new'} items={transcript} onFork={setForkFrom} busy={busy} projectPath={config?.activeWorkspace ?? undefined} />
 
           {/* 正在想的那一段:自动展开,让人看着它在动 */}
           {thinking && <Thought text={thinking} live />}
@@ -1149,7 +1156,7 @@ export default function App(): React.JSX.Element {
               {/* 流式过程中也走 Markdown:半截的代码块、没闭合的粗体都要能画,
                   不然文字会在收尾那一刻整段重排,读起来像闪了一下 */}
               <div className="msg-claude">
-                <Markdown text={streaming} />
+                <Markdown text={streaming} projectPath={config?.activeWorkspace ?? undefined} />
                 <span className="stream-caret" />
               </div>
             </div>
@@ -1377,7 +1384,7 @@ export default function App(): React.JSX.Element {
               placeholder={
                 busy
                   ? '正在回答…这条会排队,答完接着发(Enter 发送)'
-                  : '给 Claude Code 发消息…(Enter 发送,Shift+Enter 换行,可粘贴或拖入附件)'
+                  : '给 Claude 发消息…'
               }
               onChange={(e) => setDraft(e.target.value)}
               onPaste={(e) => {
@@ -1584,5 +1591,6 @@ export default function App(): React.JSX.Element {
       )}
       </div>
     </div>
+    </ImageChatContext.Provider>
   )
 }

@@ -173,6 +173,13 @@ export type FileRead =
   | { ok: true; text: string; editable: boolean }
   | { ok: false; reason: 'not-found' | 'out-of-scope' | 'too-large' | 'binary'; size?: number }
 
+export type MarkdownImageRead =
+  | { ok: true; src: string; path?: string }
+  | { ok: false; reason: 'not-found' | 'out-of-scope' | 'too-large' | 'unsupported' | 'unavailable' }
+
+export type ImageAction = 'copy' | 'reveal' | 'save'
+export type ImageActionResult = { ok: true; canceled?: boolean } | { ok: false; error: string }
+
 /** 当前登录的账号。原生 `/status` 里的那几行 */
 export interface AccountInfo {
   email?: string

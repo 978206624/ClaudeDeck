@@ -1,7 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, shell, type IpcMainInvokeEvent } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { statSync } from 'node:fs'
+import { realpath, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import {
   deleteSession,
@@ -13,6 +14,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk'
 import { SessionPool } from './session-pool.js'
 import { AttachmentStore, attachmentResult } from './attachments.js'
+import { loadImageForAction, readMarkdownImage } from './markdown-image.js'
 import { MAX_ATTACHMENTS, MAX_IMAGE_BYTES, MAX_ATTACHMENT_BYTES, parseAttachmentPrompt } from '../shared/attachments.js'
 import {
   addProject,
@@ -45,6 +47,8 @@ import type {
   FileEntry,
   FileRead,
   ImageAttachment,
+  ImageAction,
+  ImageActionResult,
   PermissionMode,
   RewindPreview,
   SaveResult,
@@ -531,6 +535,51 @@ function registerIpc(): void {
       ? readProjectFile(projectPath, relPath)
       : { ok: false, reason: 'out-of-scope' },
   )
+  ipcMain.handle('files:image', (_e, projectPath: string, source: string) =>
+    knownProject(projectPath)
+      ? readMarkdownImage(projectPath, source)
+      : { ok: false, reason: 'out-of-scope' },
+  )
+  ipcMain.handle('files:imageAttach', async (e, project: string, source: string) => {
+    requireProject(project)
+    const image = await loadImageForAction(project, source)
+    requireProject(project)
+    return attachments.add(e.sender.id, project, image.name, image.bytes)
+  })
+  ipcMain.handle('files:imageAction', async (_e, project: string, source: string, action: ImageAction): Promise<ImageActionResult> => {
+    try {
+      requireProject(project)
+      if (!['copy', 'reveal', 'save'].includes(action)) throw new Error('不支持此图片操作。')
+      if (action === 'reveal' && /^(data|https?):/i.test(source)) throw new Error('网络图片没有本地原文件,请先下载副本。')
+      const image = await loadImageForAction(project, source)
+      requireProject(project)
+      if (action === 'reveal') {
+        if (!image.path) throw new Error('此图片没有本地原文件。')
+        shell.showItemInFolder(image.path)
+      } else if (action === 'copy') {
+        const bitmap = nativeImage.createFromDataURL(image.src)
+        if (bitmap.isEmpty()) throw new Error('图片无法解码,不能复制。')
+        clipboard.writeImage(bitmap)
+      } else {
+        const result = await dialog.showSaveDialog({ title: '下载图片副本', defaultPath: image.name,
+          filters: [{ name: '图片', extensions: [image.name.split('.').at(-1)!] }],
+        })
+        if (result.canceled || !result.filePath) return { ok: true, canceled: true }
+        requireProject(project)
+        if (image.path) {
+          let same = resolve(result.filePath).toLowerCase() === resolve(image.path).toLowerCase()
+          try {
+            const target = await realpath(result.filePath)
+            const [a, b] = await Promise.all([stat(image.path), stat(target)])
+            same ||= target.toLowerCase() === image.path.toLowerCase() || (a.ino !== 0 && a.ino === b.ino && a.dev === b.dev)
+          } catch { /* 新副本不存在 */ }
+          if (same) throw new Error('请选择其他位置或名称,不能覆盖原图。')
+        }
+        await writeFile(result.filePath, image.bytes)
+      }
+      return { ok: true }
+    } catch (err) { return { ok: false, error: err instanceof Error ? err.message : String(err) } }
+  })
 
   // .claude 配置栏 · §10。范围锁在 claudedir.ts 里,渲染层传来的路径一律不信。
   ipcMain.handle('claude:list', (): ClaudeEntry[] => {

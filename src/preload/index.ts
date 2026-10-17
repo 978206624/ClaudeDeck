@@ -16,6 +16,9 @@ import type {
   EffortLevel,
   FileEntry,
   FileRead,
+  MarkdownImageRead,
+  ImageAction,
+  ImageActionResult,
   ImageAttachment,
   InitInfo,
   ModelOption,
@@ -94,6 +97,10 @@ const api = {
       ipcRenderer.invoke('files:list', projectPath, relDir),
     read: (projectPath: string, relPath: string): Promise<FileRead> =>
       ipcRenderer.invoke('files:read', projectPath, relPath),
+    image: (projectPath: string, source: string): Promise<MarkdownImageRead> =>
+      ipcRenderer.invoke('files:image', projectPath, source),
+    imageAttach: (project: string, source: string): Promise<ChatAttachment> => ipcRenderer.invoke('files:imageAttach', project, source),
+    imageAction: (project: string, source: string, action: ImageAction): Promise<ImageActionResult> => ipcRenderer.invoke('files:imageAction', project, source, action),
   },
   attachments: {
     choose: (project: string): Promise<AttachmentResult[]> => ipcRenderer.invoke('attachments:choose', project),

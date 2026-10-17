@@ -156,13 +156,10 @@ try {
   await page.waitForSelector('.sidebar', { timeout: 5_000 })
   check('侧栏能再展开', true)
 
-  // 新建会话移到品牌行,不再有那一整行与快捷键标注
+  // 品牌行只保留名称,新建会话使用项目行加号。
   const brandBtn = await page.$$eval('.sidebar-brand .new-session', (n) => n.length)
-  check('新建会话在品牌行', brandBtn === 1)
-  // 光一个图标不说明自己是什么 —— 必须带字
-  const newLabel = await page.$eval('.new-session', (e) => e.textContent?.trim() ?? '')
-  check('新建会话带文字', newLabel.includes('新建会话'), newLabel)
-  check('不再显示快捷键', (await page.$$eval('.new-session kbd', (n) => n.length)) === 0)
+  check('品牌行不再显示新建会话', brandBtn === 0)
+  check('项目行保留新建会话铅笔', (await page.$$eval('.project-add', (n) => n.length)) > 0)
 
   // 标题栏那条不画分隔线 —— 无边框就是为了让它和下面是一整块
   const tbBorder = await page.$eval('.titlebar', (e) => getComputedStyle(e).borderBottomWidth)
@@ -254,7 +251,8 @@ try {
     check('侧边栏出现历史会话', firstCount > 0, `${firstCount} 条`)
 
     // 新建一个会话,让列表里有两条可切换
-    await page.click('.new-session')
+    await page.hover('.project-row[aria-current="true"]')
+    await page.click('.project-row[aria-current="true"] ~ .project-add')
     await page.fill('.composer textarea', '只回复两个字:第二')
     await send(page)
     await page.waitForFunction(
@@ -580,10 +578,14 @@ try {
     await page.click('.titlebar-left .win-btn:nth-child(3)')
     await page.waitForSelector('.dialog', { timeout: 10_000 })
     const setText = await page.$eval('.dialog-body', (e) => e.textContent ?? '')
-    check('设置里写明 Claude Code 来源', /随安装包分发|系统 PATH/.test(setText))
     check('设置里有 Base URL 与密钥', /Base URL/.test(setText) && /API Key/.test(setText))
     check('密钥不回读明文', (await page.$eval('.dialog input[type=password]', (e) => e.value)) === '')
-    check('设置里有更新入口', /检查更新/.test(setText) && /当前版本/.test(setText))
+    await page.getByRole('button', { name: '运行环境', exact: true }).click()
+    const runtimeText = await page.$eval('.dialog-body', (e) => e.textContent ?? '')
+    check('设置里写明 Claude Code 来源', /随安装包分发|系统 PATH/.test(runtimeText))
+    await page.getByRole('button', { name: '关于与更新', exact: true }).click()
+    const aboutText = await page.$eval('.dialog-body', (e) => e.textContent ?? '')
+    check('设置里有更新入口', /检查更新/.test(aboutText) && /ClaudeDeck/.test(aboutText))
     // 开发构建下 electron-updater 只对安装版生效,点了要给出明确说明而不是干等
     // 必须指名更新那一行 —— 对话框里还有密钥那一节的「保存」,
     // 用 .set-actions 会取到第一个
@@ -763,7 +765,8 @@ try {
     await page.keyboard.press('Escape')
 
     // 6 + 7:一发出去,侧栏立刻多一条,同时出现等待态
-    await page.click('.new-session')
+    await page.hover('.project-row[aria-current="true"]')
+    await page.click('.project-row[aria-current="true"] ~ .project-add')
     await settle(page)
     const rowsBefore = await page.$$eval('.session-row', (n) => n.length)
     await page.fill('.composer textarea', '只回复两个字:好的')

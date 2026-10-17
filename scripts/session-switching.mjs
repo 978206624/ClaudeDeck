@@ -435,7 +435,8 @@ try {
   console.log('PASS 模型/努力/权限按运行会话恢复,不随其他会话切换漂移')
 
   await push('A', [delta('新建时仍在生成')])
-  await page.locator('.new-session').click()
+  await page.locator('.project-row[aria-current="true"]').hover()
+  await page.locator('.project-row[aria-current="true"] ~ .project-add').click()
   await ready()
   await push('A', [delta('并且继续'), done])
   assert.equal(await textCount('新建时仍在生成'), 0)
@@ -444,7 +445,8 @@ try {
   console.log('PASS 新建会话不打断原会话,后台完成后仍能切回')
 
   await app.evaluate(() => { globalThis.sessionFixture.withholdInit = true })
-  await page.locator('.new-session').click()
+  await page.locator('.project-row[aria-current="true"]').hover()
+  await page.locator('.project-row[aria-current="true"] ~ .project-add').click()
   await ready()
   await page.locator('.composer textarea').fill('尚无会话ID的请求')
   await page.locator('.composer [data-state="send"]').click()

@@ -280,13 +280,14 @@ export default function ControlBar({
         </div>
 
         {busy ? (
-          <button className="btn-stop send" data-state="stop" onClick={onStop}>
+          <button className="btn-stop send" data-state="stop" aria-label="停止" title="停止回答" onClick={onStop}>
             <span className="stop-glyph" />
-            停止
           </button>
         ) : (
-          <button className="primary send" data-state="send" disabled={!canSend} onClick={onSend}>
-            发送
+          <button className="primary send" data-state="send" aria-label="发送" title="发送消息（Enter）" disabled={!canSend} onClick={onSend}>
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M8 13V3m-5 5 5-5 5 5" />
+            </svg>
           </button>
         )}
       </div>

@@ -24,6 +24,7 @@ export default memo(function Message({
   images,
   attachments,
   onFork,
+  projectPath,
 }: {
   role: 'user' | 'assistant'
   text: string
@@ -33,6 +34,7 @@ export default memo(function Message({
   images?: number
   attachments?: AttachmentSummary[]
   onFork?: (id: string) => void
+  projectPath?: string
 }): React.JSX.Element {
   const [copied, setCopied] = useState(false)
   const time = ts
@@ -47,7 +49,7 @@ export default memo(function Message({
         {attachments?.length ? <div className="message-attachments">{attachments.map((file) =>
           <span className="message-attachment" key={file.id} title={file.name}><AttachmentIcon /><span>{file.name}</span><small>{attachmentSize(file.size)}</small></span>,
         )}</div> : images ? <span className="msg-attach">图 ×{images}</span> : null}
-        {role === 'user' ? text : <Markdown text={text} />}
+        {role === 'user' ? text : <Markdown text={text} projectPath={projectPath} />}
       </div>
       <div className="msg-slot">
         <button

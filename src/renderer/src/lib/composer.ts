@@ -25,6 +25,7 @@ export function useComposer(): {
   switchDraft: (project: string, session: string) => void
   renameDraft: (project: string, session: string) => void
   choose: () => Promise<void>; addFiles: (files: File[]) => Promise<void>
+  addImage: (project: string, load: () => Promise<ChatAttachment>) => Promise<void>
   addPaste: (text: string) => Promise<void>; remove: (key: string) => Promise<void>
   clear: () => void
   recovery: (text: string, files: DraftAttachment[]) => () => void
@@ -125,6 +126,18 @@ export function useComposer(): {
       update()
     }
   }
+  async function addImage(project: string, load: () => Promise<ChatAttachment>): Promise<void> {
+    const draft = get()
+    if (draft.project !== project) throw new Error('会话已切换,请在当前会话重新添加图片。')
+    const placeholder = reserve(draft, '图片', 0)
+    await complete(draft, placeholder, load)
+    if (!draft.files.includes(placeholder)) throw new Error('图片添加已取消。')
+    if (placeholder.status === 'error') {
+      draft.files = draft.files.filter((file) => file !== placeholder)
+      update()
+      throw new Error(placeholder.error)
+    }
+  }
   async function choose(): Promise<void> {
     const draft = get()
     if (draft.choosing) return
@@ -161,7 +174,7 @@ export function useComposer(): {
   }
   return {
     draft: record.text, setDraft, files: record.files, processing, attachmentError: record.error,
-    switchDraft, renameDraft, choose, addFiles, addPaste, remove,
+    switchDraft, renameDraft, choose, addFiles, addImage, addPaste, remove,
     clear: () => { const draft = get(); draft.text = ''; draft.files = []; draft.error = null; update() },
     recovery: (text, files) => {
       const draft = get()

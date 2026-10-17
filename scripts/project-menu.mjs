@@ -67,6 +67,12 @@ try {
   const project = (name) => page.locator('.project-row').filter({ hasText: name })
   const ready = () => page.waitForFunction(() =>
     document.querySelector('.composer-wrap')?.getAttribute('aria-busy') === 'false')
+  const openCreator = async () => {
+    await page.locator('.group-head').hover()
+    await page.getByTitle('添加项目', { exact: true }).click()
+  }
+  const waitActionOpacity = (selector, value) => page.waitForFunction(({ selector, value }) =>
+    getComputedStyle(document.querySelector(selector)).opacity === value, { selector, value })
   const menu = () => page.locator('.project-menu')
   const openMenu = async (name) => {
     await project(name).click({ button: 'right' })
@@ -74,6 +80,16 @@ try {
   }
   await project('项目A').waitFor()
   await ready()
+  assert.equal(await page.locator('.sidebar-brand button').count(), 0)
+  assert.equal(await page.locator('.sidebar-brand .brand').innerText(), 'ClaudeDeck')
+  assert.equal(await page.locator('.project-add').count(), 2)
+  await page.locator('.composer textarea').fill('只清空当前项目的新会话草稿')
+  await project('项目A').hover()
+  await page.getByTitle('在 项目A 里新建会话', { exact: true }).click()
+  await ready()
+  assert.equal(await page.locator('.composer textarea').inputValue(), '')
+  assert.equal(await page.locator('.project-row[aria-current="true"] .name').innerText(), '项目A')
+  console.log('PASS 品牌行仅显示名称,项目铅笔仍在当前项目新建会话')
   const fileButton = page.getByRole('button', { name: '浏览 项目A 的文件', exact: true })
   const waitOpacity = (value) => page.waitForFunction((value) =>
     getComputedStyle(document.querySelector('.project-files')).opacity === value, value)
@@ -88,9 +104,13 @@ try {
       await page.locator('.composer textarea').focus()
       await page.mouse.move(800, 400)
       await waitOpacity('0')
+      await waitActionOpacity('.project-add', '0')
+      await waitActionOpacity('.project-create-action', '0')
+      assert.equal(await page.locator('.project-add').first().evaluate((el) => getComputedStyle(el).pointerEvents), 'none')
       const before = await project('项目A').locator('.name').boundingBox()
       await project('项目A').hover()
       await waitOpacity('1')
+      await waitActionOpacity('.project-add', '1')
       const after = await project('项目A').locator('.name').boundingBox()
       assert.deepEqual(after, before, '悬停后项目名位置或宽度改变')
       const fits = await fileButton.evaluate((el) => {
@@ -100,10 +120,38 @@ try {
         return file.left >= line.left && add.right <= line.right && file.right <= add.left
       })
       assert.equal(fits, true)
+      const actions = await page.evaluate(() => {
+        const create = document.querySelector('.project-create-action').getBoundingClientRect()
+        const add = document.querySelector('.project-add').getBoundingClientRect()
+        const svg = document.querySelector('.project-add svg')
+        return { aligned: create.right === add.right, size: add.width, height: add.height,
+          svgSize: svg.getAttribute('width'), pencil: svg.querySelector('path').getAttribute('d').includes('L11 2') }
+      })
+      assert.deepEqual(actions, { aligned: true, size: 32, height: 32, svgSize: '18', pencil: true })
       if (sidebarWidth === 264) await page.screenshot({ path: join(TEMP, `sidebar-files-${theme}.png`) })
+      await page.locator('.group-head').hover()
+      await waitActionOpacity('.project-create-action', '1')
+      await waitActionOpacity('.project-add', '0')
+      assert.equal(await page.locator('.project-create-action svg').getAttribute('width'), '18')
+      if (sidebarWidth === 264) await page.screenshot({ path: join(TEMP, `sidebar-add-${theme}.png`) })
     }
   }
   await page.evaluate(() => document.querySelector('.app').style.setProperty('--w-sidebar', '264px'))
+  await page.locator('.project-create-action').focus()
+  await waitActionOpacity('.project-create-action', '1')
+  await page.keyboard.press('Enter')
+  await page.getByRole('dialog', { name: '创建项目', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('dialog', { name: '创建项目', exact: true }).waitFor({ state: 'hidden' })
+  await page.waitForFunction(() => document.querySelector('.project-create-action') === document.activeElement &&
+    !document.querySelector('.shell')?.hasAttribute('inert'))
+  await page.locator('.composer textarea').fill('铅笔键盘新建')
+  await page.locator('.project-add').first().focus()
+  await waitActionOpacity('.project-add', '1')
+  await page.keyboard.press('Enter')
+  await ready()
+  assert.equal(await page.locator('.composer textarea').inputValue(), '')
+  console.log('PASS 添加/铅笔图标悬停或键盘聚焦显示,32px/18px 且右对齐,亮暗窄侧栏无跳动')
   await project('项目A').focus()
   await page.keyboard.press('Tab')
   assert.equal(await fileButton.evaluate((el) => el === document.activeElement), true)
@@ -209,7 +257,7 @@ try {
   assert.equal(await page.getByTitle('管理项目', { exact: true }).count(), 0)
   await page.evaluate(() => { globalThis.originalComposer = document.querySelector('.composer textarea') })
   for (const closeBy of ['button', 'escape', 'backdrop', 'cancel']) {
-    await page.getByTitle('添加项目', { exact: true }).click()
+    await openCreator()
     await creator().waitFor()
     assert.equal(await page.locator('.shell').getAttribute('inert'), '')
     assert.equal(await creator().getByRole('textbox', { name: '项目名称' }).evaluate((el) => el === document.activeElement), true)
@@ -248,7 +296,7 @@ try {
     assert.equal(readFileSync(CONFIG, 'utf8'), beforeConfig)
   }
   await app.evaluate(({ dialog }) => { dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] }) })
-  await page.getByTitle('添加项目', { exact: true }).click()
+  await openCreator()
   await creator().getByRole('textbox').fill('新项目')
   await creator().getByRole('button', { name: '添加', exact: true }).click()
   await page.waitForFunction(() => document.querySelector('.project-create .card')?.getAttribute('aria-busy') === 'false')
@@ -315,7 +363,7 @@ try {
 
   // 模拟系统目录选择,重新登记相同目录,历史仍可见。
   await app.evaluate(({ dialog }, path) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] }) }, OTHER)
-  await page.getByTitle('添加项目', { exact: true }).click()
+  await openCreator()
   assert.equal(await creator().getByRole('textbox').inputValue(), '')
   await creator().getByRole('button', { name: '添加', exact: true }).click()
   await creator().getByText(OTHER, { exact: true }).waitFor()
@@ -335,7 +383,7 @@ try {
   await page.getByRole('button', { name: '编辑源码', exact: true }).click()
   await page.locator('.midcol textarea').fill('# 不可丢弃的草稿')
   await page.evaluate(() => { globalThis.originalFile = document.querySelector('.midcol textarea') })
-  await page.getByTitle('添加项目', { exact: true }).click()
+  await openCreator()
   await page.keyboard.press('Escape')
   await creator().waitFor({ state: 'hidden' })
   assert.equal(await page.evaluate(() => globalThis.originalFile === document.querySelector('.midcol textarea')), true)
@@ -381,7 +429,7 @@ try {
   await ready()
   assert.equal(JSON.parse(readFileSync(CONFIG, 'utf8')).projects[0].name, 'project-a')
   await app.evaluate(({ dialog }, path) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] }) }, WORKSPACE)
-  await page.getByTitle('添加项目', { exact: true }).click()
+  await openCreator()
   await creator().getByRole('button', { name: '添加', exact: true }).click()
   await creator().getByText(WORKSPACE, { exact: true }).waitFor()
   await app.evaluate(({ dialog }, path) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] }) }, NAMED)
@@ -397,7 +445,7 @@ try {
   await menu().getByRole('button', { name: '移除', exact: true }).click()
   await project('含中文的文件夹').waitFor({ state: 'hidden' })
   await ready()
-  await page.getByTitle('添加项目', { exact: true }).click()
+  await openCreator()
   await creator().getByRole('textbox').fill('  自定义项目名  ')
   await creator().getByRole('button', { name: '添加', exact: true }).click()
   await creator().getByText(NAMED, { exact: true }).waitFor()
